@@ -1,30 +1,127 @@
+// middleware/authMiddleware.js
 const jwt = require("jsonwebtoken");
-const auth = (req, res, next) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res.status(401).json({
-      success: false,
-      message: "Authorization token missing or malformed",
-    });
-  }
-  const token = authHeader.split(" ")[1];
+const User = require("../models/User");
+
+// Single middleware for authentication
+exports.protect = async (req, res, next) => {
   try {
+    let token;
+
+    // Check for token in headers
+    if (req.headers.authorization && req.headers.authorization.startsWith("Bearer")) {
+      token = req.headers.authorization.split(" ")[1];
+    }
+
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: "No token, authorization denied"
+      });
+    }
+
+    // Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = {
-      ...decoded,
-      _id: decoded.id || decoded._id,
-    };
+
+    // Get user from token
+    const user = await User.findById(decoded.id).select('-password');
+    
+    if (!user || !user.isActive) {
+      return res.status(401).json({
+        success: false,
+        message: "User not found or inactive"
+      });
+    }
+
+    req.user = user;
     next();
   } catch (err) {
-    console.error("❌ JWT verification failed:", err.message);
-    const isExpired = err.name === "TokenExpiredError";
+    if (err.name === 'TokenExpiredError') {
+      return res.status(401).json({
+        success: false,
+        message: "Token expired, please log in again"
+      });
+    }
+    console.error("Auth error:", err);
     return res.status(401).json({
       success: false,
-      message: isExpired
-        ? "Token expired. Please login again."
-        : "Invalid token. Please login again.",
+      message: "Not authorized to access this route"
     });
   }
 };
 
-module.exports = auth;
+// Role-based authorization
+exports.authorize = (...roles) => {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json({
+        success: false,
+        message: "Not authorized"
+      });
+    }
+
+    if (!roles.includes(req.user.jobRole)) {
+      return res.status(403).json({
+        success: false,
+        message: `User role ${req.user.jobRole} is not authorized to access this route`
+      });
+    }
+
+    next();
+  };
+};
+
+// Token verification endpoint
+exports.verify = async (req, res) => {
+  try {
+    let token;
+
+    // Check for token in headers
+    if (req.headers.authorization && req.headers.authorization.startsWith("Bearer")) {
+      token = req.headers.authorization.split(" ")[1];
+    }
+
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: "No token provided"
+      });
+    }
+
+    // Verify token
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    // Get user from token
+    const user = await User.findById(decoded.id)
+      .select('-password')
+      .populate('department', 'name');
+
+    if (!user || !user.isActive) {
+      return res.status(401).json({
+        success: false,
+        message: "User not found or inactive"
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        jobRole: user.jobRole,
+        department: user.department
+      }
+    });
+  } catch (err) {
+    if (err.name === 'TokenExpiredError') {
+      return res.status(401).json({
+        success: false,
+        message: "Token expired, please log in again"
+      });
+    }
+    return res.status(401).json({
+      success: false,
+      message: "Invalid token"
+    });
+  }
+};
