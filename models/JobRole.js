@@ -1,15 +1,20 @@
 const mongoose = require("mongoose");
 
-const departmentSchema = new mongoose.Schema({
+const jobRoleSchema = new mongoose.Schema({
   name: {
     type: String,
-    required: [true, "Department name is required"],
+    required: [true, "Job role name is required"],
     trim: true,
-    maxlength: [50, "Department name cannot exceed 50 characters"]
+    maxlength: [50, "Job role name cannot exceed 50 characters"]
   },
   description: {
     type: String,
     maxlength: [200, "Description cannot exceed 200 characters"]
+  },
+  department: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Department",
+    required: true
   },
   company: {
     type: mongoose.Schema.Types.ObjectId,
@@ -33,26 +38,26 @@ const departmentSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Compound index for unique department names within a company
-departmentSchema.index({ name: 1, company: 1 }, { 
+// Compound index for unique job role names within a department and company
+jobRoleSchema.index({ name: 1, department: 1, company: 1 }, { 
   unique: true,
   partialFilterExpression: { isActive: true }
 });
 
-// Prevent deletion of departments with active users
-departmentSchema.pre('save', async function(next) {
+// Prevent deletion of job roles with active users
+jobRoleSchema.pre('save', async function(next) {
   if (this.isModified('isActive') && !this.isActive) {
     const User = mongoose.model('User');
     const usersCount = await User.countDocuments({ 
-      department: this._id, 
+      jobRole: this._id, 
       isActive: true 
     });
     
     if (usersCount > 0) {
-      next(new Error('Cannot delete department with active users'));
+      next(new Error('Cannot delete job role with active users'));
     }
   }
   next();
 });
 
-module.exports = mongoose.model("Department", departmentSchema);
+module.exports = mongoose.model("JobRole", jobRoleSchema);
