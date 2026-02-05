@@ -1,21 +1,20 @@
-const express = require("express");
+// attendanceRoutes.js
+const express = require('express');
 const router = express.Router();
-const attendanceController = require("../controllers/AttendanceController");
-const auth = require("../../middleware/authMiddleware");
-const isAdmin = require("../../middleware/isAdmin"); 
-const isManager = require("../../middleware/isManager");
+const attendanceController = require('../controllers/AttendanceController');
+const { protect, authorize } = require('../../middleware/authMiddleware');
 
-// ✅ USER ROUTES (require login)
-router.post("/in", auth, attendanceController.clockIn);           
-router.post("/out", auth, attendanceController.clockOut);          
-router.get("/list", auth, attendanceController.getAttendanceList); 
-router.get("/status", auth, attendanceController.getTodayStatus);  
+// User routes
+router.post('/in', protect, attendanceController.clockIn);
+router.post('/out', protect, attendanceController.clockOut);
+router.get('/status', protect  , attendanceController.getTodayStatus);
+router.get('/list', protect, attendanceController.getAttendanceList);
 
-// 🔐 ADMIN ROUTES
-router.get("/all", [auth, isAdmin], attendanceController.getAllUsersAttendance);      
-router.put("/:id", [auth, isAdmin], attendanceController.updateAttendanceRecord);     
-router.delete("/:id", [auth, isManager], attendanceController.deleteAttendanceRecord);
-router.post("/manual", [auth, isAdmin], attendanceController.createManualAttendance); // NEW: For adding manual attendance
-router.get("/user/:userId", [auth, isAdmin], attendanceController.getAttendanceByUser); // NEW: Get attendance by user
-
+// Admin routes
+router.get('/all', protect, attendanceController.getAllUsersAttendance);
+router.post('/manual', protect, attendanceController.createManualAttendance);
+router.put('/:id', protect, attendanceController.updateAttendanceRecord);
+router.delete('/:id', protect, attendanceController.deleteAttendanceRecord);
+router.get('/user/:userId', protect,  attendanceController.getAttendanceByUser);
+router.get('/stats', protect,  attendanceController.getAttendanceStats);
 module.exports = router;

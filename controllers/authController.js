@@ -2,7 +2,7 @@ const User = require("../models/User");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const sendEmail = require("../utils/sendEmail");
-
+const Department = require("../models/Department");
 // Reusable error response
 const errorResponse = (res, status, message) => {
   return res.status(status).json({ success: false, message });
@@ -15,89 +15,75 @@ exports.register = async (req, res) => {
       name,
       email,
       password,
-      role,
-      phone,
-      address,
-      gender,
-      maritalStatus,
-      dob,
-      salary,
-      accountNumber,
-      ifsc,
-      bankName,
-      bankHolderName,
-      employeeType,
+      department,
       jobRole,
-      properties = [],
-      propertyOwned,
-      additionalDetails,
-      fatherName,
-      motherName,
-      emergencyName,
-      emergencyPhone,
-      emergencyRelation,
-      emergencyAddress,
+      company, 
+      companyCode, 
+      // Optional fields
+      phone, address, gender, maritalStatus, dob, salary,
+      accountNumber, ifsc, bankName, bankHolderName,
+      employeeType, properties, propertyOwned, additionalDetails,
+      fatherName, motherName,
+      emergencyName, emergencyPhone, emergencyRelation, emergencyAddress
     } = req.body;
 
-    const cleanEmail = email?.trim().toLowerCase();
-
-    if (!name || !cleanEmail || !password) {
-      return errorResponse(res, 400, "Name, email, and password are required");
+    // Required fields validation
+    if (!name || !email || !password || !department || !jobRole ||!company || !companyCode) {
+      return errorResponse(res, 400, "Name, email, password, department, job role, company and company code are required");
     }
 
-    // ✅ Email format validation
+    const cleanEmail = email.trim().toLowerCase();
+
+    // Email format validation
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
       return errorResponse(res, 400, "Invalid email format");
     }
 
-    // ✅ Check existing user
+    // Check existing user
     const existingUser = await User.findOne({ email: cleanEmail });
     if (existingUser) {
       return errorResponse(res, 409, "Email already in use");
     }
 
-    // ✅ Role validation
-    const validRoles = ["admin", "user", "hr", "manager", "SuperAdmin"];
-    const assignedRole = validRoles.includes(role) ? role : "user";
+    // Check if department exists
+    const departmentExists = await Department.findById(department);
+    if (!departmentExists) {
+      return errorResponse(res, 404, "Department not found");
+    }
 
-    // ✅ Create user data
-    const userData = {
+
+    // Create user
+    const user = await User.create({
       name,
       email: cleanEmail,
       password,
-      role: assignedRole,
-      employeeType,
-    };
-
-    // ✅ For user role, include optional details if provided
-    if (assignedRole === "user") {
-      Object.assign(userData, {
-        ...(phone && { phone }),
-        ...(address && { address }),
-        ...(gender && { gender }),
-        ...(maritalStatus && { maritalStatus }),
-        ...(dob && { dob }),
-        ...(salary && { salary }),
-        ...(accountNumber && { accountNumber }),
-        ...(ifsc && { ifsc }),
-        ...(bankName && { bankName }),
-        ...(bankHolderName && { bankHolderName }),
-        ...(employeeType && { employeeType }),
-        ...(jobRole && { jobRole }),
-        ...(properties?.length && { properties }),
-        ...(propertyOwned && { propertyOwned }),
-        ...(additionalDetails && { additionalDetails }),
-        ...(fatherName && { fatherName }),
-        ...(motherName && { motherName }),
-        ...(emergencyName && { emergencyName }),
-        ...(emergencyPhone && { emergencyPhone }),
-        ...(emergencyRelation && { emergencyRelation }),
-        ...(emergencyAddress && { emergencyAddress }),
-      });
-    }
-
-    // ✅ Create new user
-    const user = await User.create(userData);
+      department,
+      jobRole,
+      company,
+      companyCode,
+      // Optional fields
+      ...(phone && { phone }),
+      ...(address && { address }),
+      ...(gender && { gender }),
+      ...(maritalStatus && { maritalStatus }),
+      ...(dob && { dob }),
+      ...(salary && { salary }),
+      ...(accountNumber && { accountNumber }),
+      ...(ifsc && { ifsc }),
+      ...(bankName && { bankName }),
+      ...(bankHolderName && { bankHolderName }),
+      ...(employeeType && { employeeType }),
+      ...(properties && { properties }),
+      ...(propertyOwned && { propertyOwned }),
+      ...(additionalDetails && { additionalDetails }),
+      ...(fatherName && { fatherName }),
+      ...(motherName && { motherName }),
+      ...(emergencyName && { emergencyName }),
+      ...(emergencyPhone && { emergencyPhone }),
+      ...(emergencyRelation && { emergencyRelation }),
+      ...(emergencyAddress && { emergencyAddress }),
+      createdBy: req.user?.id // If authenticated
+    });
 
     return res.status(201).json({
       success: true,
@@ -106,7 +92,10 @@ exports.register = async (req, res) => {
         id: user._id,
         name: user.name,
         email: user.email,
-        role: user.role,
+        department: user.department,
+        jobRole: user.jobRole,
+        company: user.company,
+        companyCode: user.companyCode,
         createdAt: user.createdAt,
       },
     });
@@ -115,8 +104,6 @@ exports.register = async (req, res) => {
     return errorResponse(res, 500, "Registration failed");
   }
 };
-
-
 // ✅ Login
 exports.login = async (req, res) => {
   try {
@@ -127,7 +114,10 @@ exports.login = async (req, res) => {
       return errorResponse(res, 400, "Email and password are required");
     }
 
-    const user = await User.findOne({ email: cleanEmail }).select("+password");
+    const user = await User.findOne({ email: cleanEmail, isActive: true })
+      .select("+password")
+      .populate('department', 'name');
+
     if (!user) {
       return errorResponse(res, 401, "Invalid credentials");
     }
@@ -138,9 +128,15 @@ exports.login = async (req, res) => {
     }
 
     const token = jwt.sign(
-      { id: user._id, role: user.role },
+      { 
+        id: user._id, 
+        jobRole: user.jobRole,
+        department: user.department?._id,
+        name: user.name 
+
+      },
       process.env.JWT_SECRET,
-      { expiresIn: "12h" } // 12 hours session
+      { expiresIn: "12h" }
     );
 
     return res.status(200).json({
@@ -151,10 +147,13 @@ exports.login = async (req, res) => {
         id: user._id,
         name: user.name,
         email: user.email,
-        role: user.role,
+        department: user.department,
+        jobRole: user.jobRole,
         phone: user.phone,
         address: user.address,
         gender: user.gender,
+        company: user.company,
+        companyCode: user.companyCode,
         maritalStatus: user.maritalStatus,
         dob: user.dob,
         salary: user.salary,
@@ -181,7 +180,6 @@ exports.login = async (req, res) => {
     return errorResponse(res, 500, "Server error during login");
   }
 };
-
 // ✅ Forgot Password
 exports.forgotPassword = async (req, res) => {
   try {
@@ -218,7 +216,6 @@ exports.forgotPassword = async (req, res) => {
     return errorResponse(res, 500, "Server error during password reset request");
   }
 };
-
 // ✅ Reset Password
 exports.resetPassword = async (req, res) => {
   try {
@@ -249,7 +246,6 @@ exports.resetPassword = async (req, res) => {
     return errorResponse(res, 500, "Server error during password reset");
   }
 };
-
 // ✅ Change Password (email + old password)
 exports.changePassword = async (req, res) => {
   try {
